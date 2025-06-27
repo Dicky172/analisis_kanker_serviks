@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import joblib
 
-# --- Fungsi untuk Memuat Aset Model ---
 # Menggunakan cache agar model tidak di-load ulang setiap kali ada interaksi.
 @st.cache_resource
 def load_model_assets():
@@ -21,43 +20,37 @@ def load_model_assets():
         )
         return None, None, None
 
+# --- UI UTAMA ---
+st.set_page_config(page_title="Prediksi Kanker Serviks", layout="wide")
+st.title("🩺 Aplikasi Prediksi Faktor Risiko Kanker Serviks")
+
+st.write("Aplikasi ini menggunakan model Machine Learning untuk memprediksi risiko kanker serviks.")
+st.warning("**Disclaimer:** Ini bukan diagnosis medis. Selalu konsultasikan dengan dokter.", icon="⚠️")
+st.divider()
+
 # Memuat aset di awal
 model, scaler, feature_names = load_model_assets()
 
-# --- Tampilan Aplikasi Web (UI) ---
-st.set_page_config(page_title="Prediksi Kanker Serviks", layout="wide")
-
-st.title("🩺 Aplikasi Prediksi Faktor Risiko Kanker Serviks")
-
-st.write("""
-Aplikasi ini menggunakan model Machine Learning (Random Forest) untuk memprediksi 
-apakah seorang pasien berisiko tinggi terkena kanker serviks berdasarkan data klinis dan demografis.
-""")
-st.warning("**Disclaimer:** Hasil prediksi ini bukan merupakan diagnosis medis. Selalu konsultasikan dengan dokter atau tenaga medis profesional untuk diagnosis yang akurat.", icon="⚠️")
-
-st.divider()
-
 # Hanya tampilkan form input jika model berhasil dimuat
-if model and scaler and feature_names:
+if not all([model, scaler, feature_names]):
+    st.warning("Aplikasi tidak dapat berjalan karena file model tidak dapat dimuat.")
+else:
     st.header("Masukkan Data Pasien:")
 
-    # Membuat kolom untuk layout yang lebih rapi
+    # Kolom untuk layout
     col1, col2, col3 = st.columns(3)
-
-    # Dictionary untuk menampung input pengguna
+    
+    # Dictionary untuk menampung input
     user_input = {}
     
-    # Membagi fitur ke dalam 3 kolom secara dinamis
+    # Membagi fitur ke dalam 3 kolom
     features_per_col = int(np.ceil(len(feature_names) / 3))
     
-    # Fungsi untuk membuat input field
     def create_input_field(feature_name):
-        # Menggunakan session_state untuk menyimpan nilai default atau nilai terakhir yang dimasukkan
-        if feature_name not in st.session_state:
-            st.session_state[feature_name] = 0.0
         return st.number_input(
             label=feature_name.replace('_', ' ').capitalize(), 
             key=feature_name,
+            value=0.0,
             format="%.2f"
         )
 
@@ -75,25 +68,21 @@ if model and scaler and feature_names:
 
     st.divider()
 
-    # Tombol untuk melakukan prediksi
+    # Tombol prediksi
     if st.button("SUBMIT & PREDIKSI", type="primary", use_container_width=True):
+        # Blok try-except untuk menangani error saat prediksi
         try:
-            # --- BAGIAN KRUSIAL YANG DIPERBAIKI ---
-            # 1. Buat DataFrame dari input pengguna.
-            input_df = pd.DataFrame([user_input])
-
-            # 2. Pastikan urutan kolom 100% sama dengan saat training.
-            # Ini adalah langkah paling penting untuk menghindari KeyError.
-            input_df = input_df[feature_names]
+            # 1. Buat DataFrame dari input dan pastikan urutan kolom benar
+            input_df = pd.DataFrame([user_input])[feature_names]
             
-            # 3. Lakukan penskalaan pada data input menggunakan scaler yang sudah di-load.
+            # 2. Skalakan data input
             input_scaled = scaler.transform(input_df)
 
-            # 4. Lakukan prediksi.
+            # 3. Lakukan prediksi
             prediction = model.predict(input_scaled)
             prediction_proba = model.predict_proba(input_scaled)
 
-            # 5. Tampilkan hasil prediksi.
+            # 4. Tampilkan hasil
             st.header("Hasil Prediksi:")
             prob_negatif, prob_positif = prediction_proba[0]
 
@@ -102,3 +91,14 @@ if model and scaler and feature_names:
                 st.write(f"Model memprediksi pasien ini memiliki risiko tinggi untuk kanker serviks dengan probabilitas **{prob_positif*100:.2f}%**.")
             else:
                 st.success(f"**Risiko Rendah (Negatif)**", icon="✅")
+                st.write(f"Model memprediksi pasien ini memiliki risiko rendah untuk kanker serviks. Probabilitas hasil negatif adalah **{prob_negatif*100:.2f}%**.")
+
+            st.write("Detail Probabilitas:")
+            st.json({
+                "Probabilitas Hasil Negatif (Kelas 0)": f"{prob_negatif:.4f}",
+                "Probabilitas Hasil Positif (Kelas 1)": f"{prob_positif:.4f}"
+            })
+
+        except Exception as e:
+            st.error(f"Terjadi error saat melakukan prediksi: {e}")
+            st.error("Ini kemungkinan disebabkan oleh masalah pada file model atau scaler. Coba latih ulang model dan simpan kembali file .pkl.")
